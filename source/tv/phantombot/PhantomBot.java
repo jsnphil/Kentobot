@@ -69,6 +69,7 @@ import com.scaniatv.CustomAPI;
 
 import io.netty.util.internal.logging.InternalLoggerFactory;
 import io.netty.util.internal.logging.JdkLoggerFactory;
+import live.kentobeans.bot.KentobotApi;
 import net.engio.mbassy.listener.Handler;
 import reactor.util.Loggers;
 import tv.phantombot.CaselessProperties.Transaction;
@@ -911,6 +912,7 @@ public final class PhantomBot implements Listener {
         this.twitchCache = TwitchCache.instance();
         Script.global.defineProperty("twitchcache", this.twitchCache, 0);
         Script.global.defineProperty("viewer", ViewerCache.instance(), 0);
+        Script.global.defineProperty("kentobotApi", KentobotApi.instance(), 0);
 
         /* And finally try to load init, that will then load the scripts */
         try {
