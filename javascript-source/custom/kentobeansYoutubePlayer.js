@@ -21,36 +21,40 @@
  * This is version 2 of the youtube player.
  *
  */
-(function () {
+(function() {
     var playlistDbPrefix = 'ytPlaylist_',
-            randomizePlaylist = $.getSetIniDbBoolean('ytSettings', 'randomizePlaylist', false),
-            announceInChat = $.getSetIniDbBoolean('ytSettings', 'announceInChat', false),
-            activePlaylistname = $.getSetIniDbString('ytSettings', 'activePlaylistname', 'default'),
-            baseFileOutputPath = $.getSetIniDbString('ytSettings', 'baseFileOutputPath', './addons/youtubePlayer/'),
-            songRequestsEnabled = $.getSetIniDbBoolean('ytSettings', 'songRequestsEnabled', true),
-            songRequestsMaxParallel = $.getSetIniDbNumber('ytSettings', 'songRequestsMaxParallel', 1),
-            songRequestsMaxSecondsforVideo = $.getSetIniDbNumber('ytSettings', 'songRequestsMaxSecondsforVideo', (8 * 60)),
-            voteArray = [],
-            skipCount,
-            lastSkipTime = 0,
-            playlistDJname = $.getSetIniDbString('ytSettings', 'playlistDJname', $.botName),
-            /* enum for player status */
-            playerStateEnum = {
-                NEWPAUSE: -3,
-                NEW: -2,
-                UNSTARTED: -1,
-                ENDED: 0,
-                PLAYING: 1,
-                PAUSED: 2,
-                BUFFERING: 3,
-                CUED: 5,
-                KEEPALIVE: 200
-            },
-            /* @type {PlayerClientInterface} */
-            connectedPlayerClient = null,
-            /* @type {BotPlayList} */
-            currentPlaylist = null,
-            _voteLock = new Packages.java.util.concurrent.locks.ReentrantLock();
+        randomizePlaylist = $.getSetIniDbBoolean('ytSettings', 'randomizePlaylist', false),
+        announceInChat = $.getSetIniDbBoolean('ytSettings', 'announceInChat', false),
+        activePlaylistname = $.getSetIniDbString('ytSettings', 'activePlaylistname', 'default'),
+        baseFileOutputPath = $.getSetIniDbString('ytSettings', 'baseFileOutputPath', './addons/youtubePlayer/'),
+        songRequestsEnabled = $.getSetIniDbBoolean('ytSettings', 'songRequestsEnabled', true),
+        songRequestsMaxParallel = $.getSetIniDbNumber('ytSettings', 'songRequestsMaxParallel', 1),
+        songRequestsMaxSecondsforVideo = $.getSetIniDbNumber('ytSettings', 'songRequestsMaxSecondsforVideo', (8 * 60)),
+        stealRefund = $.getSetIniDbBoolean('ytSettings', 'stealRefund', false),
+        voteCount = $.getSetIniDbNumber('ytSettings', 'voteCount', 0),
+        playCCOnly = $.getSetIniDbBoolean('ytSettings', 'playCCOnly', false),
+        voteArray = [],
+        skipCount,
+        lastSkipTime = 0,
+        playlistDJname = $.getSetIniDbString('ytSettings', 'playlistDJname', $.botName),
+
+        /* enum for player status */
+        playerStateEnum = {
+            NEWPAUSE: -3,
+            NEW: -2,
+            UNSTARTED: -1,
+            ENDED: 0,
+            PLAYING: 1,
+            PAUSED: 2,
+            BUFFERING: 3,
+            CUED: 5,
+            KEEPALIVE: 200
+        },
+        /* @type {PlayerClientInterface} */
+        connectedPlayerClient = null,
+        /* @type {BotPlayList} */
+        currentPlaylist = null,
+        _voteLock = new Packages.java.util.concurrent.locks.ReentrantLock();
 
     /**
      * @function reloadyt
@@ -60,6 +64,9 @@
         songRequestsMaxSecondsforVideo = $.getIniDbNumber('ytSettings', 'songRequestsMaxSecondsforVideo');
         playlistDJname = $.getIniDbString('ytSettings', 'playlistDJname');
         announceInChat = $.getIniDbBoolean('ytSettings', 'announceInChat');
+        stealRefund = $.getIniDbBoolean('ytSettings', 'stealRefund', false);
+        voteCount = $.getIniDbNumber('ytSettings', 'voteCount', 0);
+        playCCOnly = $.getIniDbBoolean('ytSettings', 'playCCOnly', false);
     }
 
     /**
@@ -67,7 +74,7 @@
      */
     function loadPanelPlaylist() {
         var keys = $.inidb.GetKeyList('yt_playlists_registry', ''),
-                count = 0;
+            count = 0;
         $.inidb.RemoveFile('ytPanelPlaylist');
 
         for (var i in keys) {
@@ -137,10 +144,10 @@
      */
     function YoutubeVideo(searchQuery, owner) {
         var videoId = '',
-                videoTitle = '',
-                videoLength = -1,
-                license = 0,
-                embeddable = 0;
+            videoTitle = '',
+            videoLength = -1,
+            license = 0,
+            embeddable = 0;
 
         this.found = false;
 
@@ -148,7 +155,7 @@
          * @function getVideoId
          * @returns {string}
          */
-        this.getVideoId = function () {
+        this.getVideoId = function() {
             return videoId;
         };
 
@@ -156,7 +163,7 @@
          * @function getOwner
          * @returns {string}
          */
-        this.getOwner = function () {
+        this.getOwner = function() {
             return owner;
         };
 
@@ -164,17 +171,48 @@
          * @function getVideoLength
          * @returns {number}
          */
-        this.getVideoLength = function () {
-            return videoLength;
+        this.getVideoLength = function() {
+            var attempts = 0;
+            if (videoLength != -1) {
+                return videoLength;
+            }
+
+            var lengthData = $.youtube.GetVideoLength(videoId);
+
+            if (lengthData[1] == 123 && lengthData[2] == 456 && lengthData[3] === 7899) {
+                throw 'Live Stream Detected';
+            }
+            // only try 2 times.
+            // No point in spamming the API, we'll hit the limit.
+            // If we try more than 2 times, that's 2 times on each song.
+            while (lengthData[0] == 0 && attempts <= 2) {
+                lengthData = $.youtube.GetVideoLength(videoId);
+                attempts++;
+            }
+            if (lengthData[0] == 0) {
+                return 0;
+            }
+            videoLength = lengthData[0];
+            return lengthData[0];
+        };
+
+        /**
+         * @function getVideoInfo
+         * Sets the member values for embeddable and license.
+         */
+        this.getVideoInfo = function() {
+            var videoInfo = $.youtube.GetVideoInfo(videoId);
+            license = videoInfo[0];
+            embeddable = videoInfo[1];
         };
 
         /**
          * @function getVideoLengthMMSS
          * @returns {String}
          */
-        this.getVideoLengthMMSS = function () {
+        this.getVideoLengthMMSS = function() {
             var min,
-                    sec;
+                sec;
 
             if (videoLength == -1) {
                 videoLength = this.getVideoLength();
@@ -190,7 +228,7 @@
          * @function getVideoLink
          * @returns {string}
          */
-        this.getVideoLink = function () {
+        this.getVideoLink = function() {
             return 'https://youtu.be/' + videoId;
         };
 
@@ -198,7 +236,7 @@
          * @function getVideoTitle
          * @returns {string}
          */
-        this.getVideoTitle = function () {
+        this.getVideoTitle = function() {
             return videoTitle;
         };
 
@@ -214,6 +252,12 @@
             owner = owner.toLowerCase();
         }
 
+        /* Redefine searchQuery to check the cache, if it doesn't exist in the cache,
+         * this is simply extracting the ID from the searchString which is one way
+         * of looking up videos via the YouTube API. Also, strip any query parameters
+         * from what should be URLs.  We do not wish to do this at the non-URL level
+         * as someone might be searching for a song using an ampersand.
+         */
         if (searchQuery.includes('/watch') && searchQuery.includes('v=')) {
             searchQuery = searchQuery.substring(searchQuery.indexOf('v=') + 2);
             if (searchQuery.includes('&')) {
@@ -226,18 +270,51 @@
             }
         }
 
-        var data = $.kentobotApi.searchForSongRequest(searchQuery);
-        var songResult = JSON.parse(data)
+        if ($.inidb.exists('ytcache', searchQuery)) {
+            var jsonString = $.getIniDbString('ytcache', searchQuery);
+            var jsonData = JSON.parse(jsonString);
+            videoId = jsonData["id"];
+            videoTitle = jsonData["title"];
+            videoLength = jsonData["time"];
+        } else {
+            var data = null;
+            var attempts = 0;
+            // We do not need an infinite loop here. 2 attempts is enough.
+            // If we loop more we might hit the limit.
+            // Since we need to look x times for each songs.
+            do {
+                data = $.youtube.SearchForVideo(searchQuery);
+                attempts++;
+            } while ($.strlen(data[0]) < 11 && data[1] != "No Search Results Found" && attempts <= 2);
 
-        if (songResult.message != null && songResult.message == "Invalid input") {
-            throw songResult.errors[0];
+            // Hit 5 trys and nothing was found
+            if ($.strlen(data[0]) < 11) {
+                throw 'No data returned.';
+            }
+
+            videoId = data[0];
+            videoTitle = data[1];
+
+            if ($.equalsIgnoreCase(videoTitle, 'video marked private') || $.equalsIgnoreCase(videoTitle, 'no search results found')) {
+                throw videoTitle;
+            }
+
+            this.getVideoLength();
+            var jsonData = {};
+            jsonData["id"] = videoId + '';
+            jsonData["title"] = videoTitle + '';
+            jsonData["time"] = videoLength;
+            var jsonString = JSON.stringify(jsonData);
+            $.inidb.set('ytcache', videoId, jsonString);
         }
 
-        $.log.file('youtube-player', JSON.stringify(data));
-
-        videoId = songResult["youtubeId"];
-        videoTitle = songResult["title"];
-        videoLength = songResult["length"];
+        this.getVideoInfo();
+        if (license == 0 && playCCOnly) {
+            throw 'Video is not licensed as Creative Commons (ID: ' + videoId + ')';
+        }
+        if (embeddable == 0) {
+            throw 'This video is not allowed to be embedded (ID: ' + videoId + ')';
+        }
 
         /** END CONTRUCTOR YoutubeVideo() */
     }
@@ -252,12 +329,12 @@
      */
     function BotPlayList(playlistName, loadDefault) {
         var previousVideo = null,
-                currentVideo = null,
-                playListDbId = playlistDbPrefix + playlistName,
-                defaultPlaylist = [], // @type { Integer[] }
-                defaultPlaylistReadOnly = [], // @type { Integer[] }
-                requests = new Packages.java.util.concurrent.ConcurrentLinkedQueue, // @type { YoutubeVideo[] } // TODO Replace with custom queue
-                requestFailReason = '';
+            currentVideo = null,
+            playListDbId = playlistDbPrefix + playlistName,
+            defaultPlaylist = [], // @type { Integer[] }
+            defaultPlaylistReadOnly = [], // @type { Integer[] }
+            requests = new Packages.java.util.concurrent.ConcurrentLinkedQueue, // @type { YoutubeVideo[] }
+            requestFailReason = '';
 
         this.playlistName = playlistName;
         this.loaded = false;
@@ -268,12 +345,12 @@
          * @param {String}
          * @return {String}
          */
-        this.importPlaylistFile = function (listName, fileName, sender) {
+        this.importPlaylistFile = function(listName, fileName, sender) {
             var importedList = [],
-                    importCount = 0,
-                    failCount = 0,
-                    playlistFailCount = 0,
-                    spaceMacther = new RegExp('\\s');
+                importCount = 0,
+                failCount = 0,
+                playlistFailCount = 0,
+                spaceMacther = new RegExp('\\s');
 
             if ($.inidb.exists('yt_playlists_registry', 'ytPlaylist_' + listName)) {
                 if ($.fileExists("./addons/youtubePlayer/" + fileName)) {
@@ -320,7 +397,7 @@
          * @function loadNewPlaylist
          * @return {Boolean}
          */
-        this.loadNewPlaylist = function (listName) {
+        this.loadNewPlaylist = function(listName) {
             if ($.inidb.exists('yt_playlists_registry', 'ytPlaylist_' + listName)) {
                 this.playlistName = listName;
                 playListDbId = playlistDbPrefix + listName;
@@ -333,7 +410,7 @@
          * @function getplayListDbId
          * @return {String}
          */
-        this.getplayListDbId = function () {
+        this.getplayListDbId = function() {
             return playListDbId;
         };
 
@@ -341,7 +418,7 @@
          * @function getRequestFailReason
          * @return {String}
          */
-        this.getRequestFailReason = function () {
+        this.getRequestFailReason = function() {
             return requestFailReason;
         };
 
@@ -349,7 +426,7 @@
          * @function setCurrentVideo
          * @param {YoutubeVideo} youtubeVideo
          */
-        this.setCurrentVideo = function (youtubeVideo) {
+        this.setCurrentVideo = function(youtubeVideo) {
             currentVideo = youtubeVideo;
         };
 
@@ -359,7 +436,7 @@
          * @param {string} [targetPlaylistName]
          * @return {number}
          */
-        this.addToPlaylist = function (youtubeVideo, targetPlaylistName) {
+        this.addToPlaylist = function(youtubeVideo, targetPlaylistName) {
             if (!youtubeVideo) {
                 return -1;
             }
@@ -384,9 +461,9 @@
          * @function deleteCurrentVideo
          * @returns {Number}
          */
-        this.deleteCurrentVideo = function () {
+        this.deleteCurrentVideo = function() {
             var keyList = $.inidb.GetKeyList(playListDbId, ''),
-                    i;
+                i;
 
             for (i = 0; i < keyList.length; i++) {
                 if (!keyList[i].equals("lastkey")) {
@@ -410,10 +487,10 @@
          * @param {String}
          * @returns {Number}
          */
-        this.deleteVideoByID = function (videoId) {
+        this.deleteVideoByID = function(videoId) {
             var keyList = $.inidb.GetKeyList(playListDbId, ''),
-                    i,
-                    isCurrent = false;
+                i,
+                isCurrent = false;
 
             for (i = 0; i < keyList.length; i++) {
                 if ($.getIniDbString(playListDbId, keyList[i]).equals(videoId)) {
@@ -435,7 +512,7 @@
          * @function deletePlaylist
          * @returns {boolean}
          */
-        this.deletePlaylist = function (listName) {
+        this.deletePlaylist = function(listName) {
             if ($.inidb.exists('yt_playlists_registry', 'ytPlaylist_' + listName)) {
                 $.inidb.del('yt_playlists_registry', 'ytPlaylist_' + listName);
                 $.inidb.RemoveFile('ytPlaylist_' + listName);
@@ -448,7 +525,7 @@
          * @function getCurrentVideo
          * @returns {YoutubeVideo}
          */
-        this.getCurrentVideo = function () {
+        this.getCurrentVideo = function() {
             return currentVideo;
         };
 
@@ -456,7 +533,7 @@
          * @function getPlaylistname
          * @returns {string}
          */
-        this.getPlaylistname = function () {
+        this.getPlaylistname = function() {
             return this.playlistName;
         };
 
@@ -464,7 +541,7 @@
          * @function getplaylistLength
          * @returns {Number}
          */
-        this.getplaylistLength = function () {
+        this.getplaylistLength = function() {
             return defaultPlaylist.length;
         };
 
@@ -472,7 +549,7 @@
          * @function getReadOnlyPlaylistData
          * @returns {String}[]
          */
-        this.getReadOnlyPlaylistData = function () {
+        this.getReadOnlyPlaylistData = function() {
             return defaultPlaylistReadOnly;
         };
 
@@ -480,7 +557,7 @@
          * @function getPreviousVideo
          * @returns {YoutubeVideo}
          */
-        this.getPreviousVideo = function () {
+        this.getPreviousVideo = function() {
             return previousVideo;
         };
 
@@ -488,7 +565,7 @@
          * @function getRequestList
          * @returns {List}{YoutubeVideo}
          */
-        this.getRequestList = function () {
+        this.getRequestList = function() {
             return requests.toArray();
         };
 
@@ -496,7 +573,7 @@
          * @function getRequestAtIndex
          * @returns {YoutubeVideo}
          */
-        this.getRequestAtIndex = function (index) {
+        this.getRequestAtIndex = function(index) {
             var requestsArray = requests.toArray();
             if (index > requestsArray.length) {
                 return null;
@@ -508,7 +585,7 @@
          * @function getRequestsCount
          * @returns {Number}
          */
-        this.getRequestsCount = function () {
+        this.getRequestsCount = function() {
             return requests.size();
         };
 
@@ -517,7 +594,7 @@
          * @param playlistPosition
          * @return {boolean}
          */
-        this.jumpToSong = function (playlistPosition) {
+        this.jumpToSong = function(playlistPosition) {
             playlistPosition--;
 
             if (!requests.isEmpty()) {
@@ -568,11 +645,11 @@
          * @param String
          * @return (boolean}
          */
-        this.findSongByTitle = function (songTitle) {
+        this.findSongByTitle = function(songTitle) {
             if (!requests.isEmpty()) {
                 var videoTitle = null,
-                        requestsArray = requests.toArray(),
-                        match = false;
+                    requestsArray = requests.toArray(),
+                    match = false;
 
                 for (var i in requestsArray) {
                     videoTitle = requestsArray[i].getVideoTitle();
@@ -635,7 +712,7 @@
          * @function loadPlaylistKeys
          * @returns {number}
          */
-        this.loadPlaylistKeys = function () {
+        this.loadPlaylistKeys = function() {
             var keyList = $.inidb.GetKeyList(playListDbId, '');
 
             defaultPlaylist = [];
@@ -658,7 +735,7 @@
          * @function nextVideo
          * @return {YoutubeVideo}
          */
-        this.nextVideo = function () {
+        this.nextVideo = function() {
             if (!connectedPlayerClient) {
                 return null;
             }
@@ -710,7 +787,7 @@
          * @function preparePlaylist
          * @return {boolean}
          */
-        this.preparePlaylist = function (playlistName) {
+        this.preparePlaylist = function(playlistName) {
             $.inidb.set('ytSettings', 'activePlaylistname', playlistName);
             if (!$.inidb.exists('yt_playlists_registry', playListDbId) || !$.inidb.FileExists(playListDbId)) {
                 $.setIniDbBoolean('yt_playlists_registry', playListDbId, true);
@@ -724,10 +801,10 @@
          * @param {String} YouTube ID
          * @return {String}
          */
-        this.removeSong = function (youTubeID) {
+        this.removeSong = function(youTubeID) {
             var songTitle = null,
-                    requestsArray = requests.toArray(),
-                    i;
+                requestsArray = requests.toArray(),
+                i;
 
             for (i in requestsArray) {
                 if (requestsArray[i].getVideoId().equals(youTubeID)) {
@@ -744,10 +821,10 @@
          * @param {String}
          * @return {String}
          */
-        this.removeUserSong = function (username) {
+        this.removeUserSong = function(username) {
             var songTitle = null,
-                    requestsArray = requests.toArray(),
-                    i;
+                requestsArray = requests.toArray(),
+                i;
 
             for (i = requestsArray.length - 1; i >= 0; i--) {
                 if (requestsArray[i].getOwner().equals(username) && songTitle == null) {
@@ -764,7 +841,7 @@
          * @param {string} requestOwner
          * @return {YoutubeVideo}
          */
-        this.requestSong = function (searchQuery, requestOwner) {
+        this.requestSong = function(searchQuery, requestOwner) {
             var keys = $.inidb.GetKeyList('ytpBlacklistedSong', '');
             if (!$.checkUserPermission(requestOwner, undefined, $.PERMISSION.Admin) && (!songRequestsEnabled || this.senderReachedRequestMax(requestOwner))) {
                 if (this.senderReachedRequestMax(requestOwner)) {
@@ -778,13 +855,18 @@
             try {
                 var youtubeVideo = new YoutubeVideo(searchQuery, requestOwner);
             } catch (ex) {
-                requestFailReason = ex;
+                requestFailReason = $.lang.get('ytplayer.requestsong.error.yterror', ex);
                 $.log.error("YoutubeVideo::exception: " + ex);
                 return null;
             }
 
             if (this.videoExistsInRequests(youtubeVideo)) {
                 requestFailReason = $.lang.get('ytplayer.requestsong.error.exists');
+                return null;
+            }
+
+            if (this.videoLengthExceedsMax(youtubeVideo) && !$.checkUserPermission(requestOwner, undefined, $.PERMISSION.Admin)) {
+                requestFailReason = $.lang.get('ytplayer.requestsong.error.maxlength', youtubeVideo.getVideoLengthMMSS());
                 return null;
             }
 
@@ -808,10 +890,10 @@
          * @param {string} sender
          * @returns {boolean}
          */
-        this.senderReachedRequestMax = function (sender) {
+        this.senderReachedRequestMax = function(sender) {
             var currentRequestCount = 0,
-                    requestsArray = requests.toArray(),
-                    i;
+                requestsArray = requests.toArray(),
+                i;
 
             sender = sender.toLowerCase();
 
@@ -829,7 +911,7 @@
          * Note that the trailing space is for any broadcasting software which is "wrapping"
          * the text constantly in a loop.
          */
-        this.updateCurrentSongFile = function (youtubeVideo) {
+        this.updateCurrentSongFile = function(youtubeVideo) {
             var writer = null;
             try {
                 writer = new Packages.java.io.OutputStreamWriter(new Packages.java.io.FileOutputStream(baseFileOutputPath + 'currentsong.txt'), 'UTF-8');
@@ -849,9 +931,9 @@
          * @param {string} targetPlaylistName
          * @returns {boolean}
          */
-        this.videoExistsInPlaylist = function (youtubeVideo, targetPlaylistName) {
+        this.videoExistsInPlaylist = function(youtubeVideo, targetPlaylistName) {
             var keyList = $.inidb.GetKeyList(playlistDbPrefix + targetPlaylistName, ''),
-                    i;
+                i;
 
             for (i in keyList) {
                 if (!keyList[i].equals("lastkey")) {
@@ -868,9 +950,9 @@
          * @param {YoutubeVideo} youtubeVideo
          * @returns {boolean}
          */
-        this.videoExistsInRequests = function (youtubeVideo) {
+        this.videoExistsInRequests = function(youtubeVideo) {
             var i,
-                    requestsArray = requests.toArray();
+                requestsArray = requests.toArray();
 
             for (i in requestsArray) {
                 if (requestsArray[i].getVideoId() == youtubeVideo.getVideoId()) {
@@ -886,7 +968,7 @@
          * @param {YoutubeVideo} youtubeVideo
          * @returns {boolean}
          */
-        this.videoLengthExceedsMax = function (youtubeVideo) {
+        this.videoLengthExceedsMax = function(youtubeVideo) {
             return (youtubeVideo.getVideoLength() > songRequestsMaxSecondsforVideo);
         };
 
@@ -910,12 +992,12 @@
      */
     function PlayerClientInterface() {
         var client = $.ytplayer,
-                playerPaused = false;
+            playerPaused = false;
 
         /**
          * @function pushCurrentSong
          */
-        this.pushCurrentSong = function () {
+        this.pushCurrentSong = function() {
             var jsonData = {};
 
             jsonData['currentsong'] = {
@@ -930,17 +1012,17 @@
         /**
          * @function pushPlayList
          */
-        this.pushPlayList = function () {
+        this.pushPlayList = function() {
             var jsonList = {},
-                    playList = [],
-                    jsonString,
-                    jsonData,
-                    youtubeObject,
-                    videoId,
-                    videoTitle,
-                    videoLength,
-                    youTubeDbId,
-                    i;
+                playList = [],
+                jsonString,
+                jsonData,
+                youtubeObject,
+                videoId,
+                videoTitle,
+                videoLength,
+                youTubeDbId,
+                i;
 
             if (currentPlaylist) {
 
@@ -963,7 +1045,7 @@
                         sec = (videoLength % 60 < 10 ? "0" : "") + Math.floor(videoLength % 60);
                         videoLength = min + ':' + sec;
 
-                        jsonList['playlist'].push({"song": videoId, "title": videoTitle, "duration": videoLength});
+                        jsonList['playlist'].push({ "song": videoId, "title": videoTitle, "duration": videoLength });
                     } else {
                         try {
                             youtubeObject = new YoutubeVideo(youTubeDbId, $.botName);
@@ -979,10 +1061,10 @@
                             jsonString = JSON.stringify(jsonData);
                             $.inidb.set('ytcache', videoId, jsonString);
 
-                            jsonList['playlist'].push({"song": videoId, "title": videoTitle, "duration": videoLength});
+                            jsonList['playlist'].push({ "song": videoId, "title": videoTitle, "duration": videoLength });
                         } catch (ex) {
                             $.log.error('YouTube API Failed Lookup: Playlist [' + jsonList['playlistname'] +
-                                    '] Index [' + playList[i] + '] YT ID [' + youTubeDbId + '] Error [' + ex + ']');
+                                '] Index [' + playList[i] + '] YT ID [' + youTubeDbId + '] Error [' + ex + ']');
                         }
                     }
                 }
@@ -993,11 +1075,11 @@
         /**
          * @function pushSongList
          */
-        this.pushSongList = function () {
+        this.pushSongList = function() {
             var jsonList = {},
-                    requestList = [],
-                    youtubeObject,
-                    i;
+                requestList = [],
+                youtubeObject,
+                i;
 
             if (currentPlaylist) {
                 jsonList['songlist'] = [];
@@ -1020,7 +1102,7 @@
          * @function play
          * @param {YoutubeVideo} youtubeVideo
          */
-        this.play = function (youtubeVideo) {
+        this.play = function(youtubeVideo) {
             client.play(youtubeVideo.getVideoId(), youtubeVideo.getVideoTitle(), youtubeVideo.getVideoLengthMMSS(), youtubeVideo.getOwner());
         };
 
@@ -1028,7 +1110,7 @@
          * @function getVolume
          * @returns {number}
          */
-        this.getVolume = function () {
+        this.getVolume = function() {
             return client.getVolume();
         };
 
@@ -1036,7 +1118,7 @@
          * @function setVolume
          * @param {number} volume
          */
-        this.setVolume = function (volume) {
+        this.setVolume = function(volume) {
             volume = parseInt(volume);
             if (!isNaN(volume)) {
                 client.setVolume(volume);
@@ -1048,7 +1130,7 @@
          * @function togglePause
          * @returns {boolean}
          */
-        this.togglePause = function () {
+        this.togglePause = function() {
             client.pause();
             playerPaused = !playerPaused;
             return playerPaused;
@@ -1058,7 +1140,7 @@
          * @function checkState
          * @returns {Int}
          */
-        this.checkState = function () {
+        this.checkState = function() {
             return parseInt(client.getPlayerState());
         };
     }
@@ -1066,9 +1148,9 @@
     /**
      * @event yTPlayerRandomize
      */
-    $.bind('yTPlayerRandomize', function (event) {
+    $.bind('yTPlayerRandomize', function(event) {
         var EventBus = Packages.tv.phantombot.event.EventBus,
-                CommandEvent = Packages.tv.phantombot.event.command.CommandEvent;
+            CommandEvent = Packages.tv.phantombot.event.command.CommandEvent;
 
         EventBus.instance().postAsync(new CommandEvent($.botName, 'ytp', 'togglerandom'));
     });
@@ -1076,14 +1158,14 @@
     /**
      * @event yTPlayerDeletePlaylistByID
      */
-    $.bind('yTPlayerDeletePlaylistByID', function (event) {
+    $.bind('yTPlayerDeletePlaylistByID', function(event) {
         currentPlaylist.deleteVideoByID(event.getYouTubeID());
     });
 
     /**
      * @event yTPlayerSongRequest
      */
-    $.bind('yTPlayerSongRequest', function (event) {
+    $.bind('yTPlayerSongRequest', function(event) {
         var request = currentPlaylist.requestSong(event.getSearch(), $.ownerName);
         if (request != null) {
             connectedPlayerClient.pushSongList();
@@ -1093,10 +1175,10 @@
     /**
      * @event ytPlayerStealSong
      */
-    $.bind('yTPlayerStealSong', function (event) {
+    $.bind('yTPlayerStealSong', function(event) {
         var youTubeID = (event.getYouTubeID() + ''),
-                refundUser = $.jsString(event.getRequester()).toLowerCase(),
-                retval;
+            refundUser = $.jsString(event.getRequester()).toLowerCase(),
+            retval;
 
         if (youTubeID.length > 1) {
             retval = currentPlaylist.addToPlaylist(new YoutubeVideo(youTubeID, $.ownerName));
@@ -1104,12 +1186,31 @@
             refundUser = currentPlaylist.getCurrentVideo().getOwner().toLowerCase();
             retval = currentPlaylist.addToPlaylist(currentPlaylist.getCurrentVideo());
         }
+
+        if (stealRefund && retval != -2 && refundUser.length > 1) {
+            if (!$.isBot(refundUser) && !$.equalsIgnoreCase(playlistDJname, refundUser)) {
+                if ($.inidb.exists('pricecom', 'songrequest') || $.inidb.exists('pricecom', 'addsong')) {
+                    var isMod = $.checkUserPermission(refundUser, event.getTags(), $.PERMISSION.Mod);
+                    if ((((isMod && $.getIniDbBoolean('settings', 'pricecomMods', false) && !$.isBot(refundUser)) || !isMod))) {
+                        var refund = $.getIniDbString('pricecom', 'songrequest');
+                        if (refund == 0) {
+                            refund = $.getIniDbString('pricecom', 'addsong');
+                        }
+                        refund = parseInt(refund / 2);
+                        if (refund > 0) {
+                            $.inidb.incr('points', refundUser, parseInt(refund));
+                            $.say($.lang.get('ytplayer.command.stealsong.refund', $.viewer.getByLogin(refundUser).name(), refund, (refund == 1 ? $.pointNameSingle : $.pointNameMultiple)));
+                        }
+                    }
+                }
+            }
+        }
     });
 
     /**
      * @event yTPlayerLoadPlaylist
      */
-    $.bind('yTPlayerLoadPlaylist', function (event) {
+    $.bind('yTPlayerLoadPlaylist', function(event) {
         currentPlaylist.loadNewPlaylist(event.getPlaylist());
         loadPanelPlaylist();
     });
@@ -1117,7 +1218,7 @@
     /**
      * @event ytPlayerDeleteCurrent
      */
-    $.bind('yTPlayerDeleteCurrent', function (event) {
+    $.bind('yTPlayerDeleteCurrent', function(event) {
         currentPlaylist.deleteCurrentVideo();
         connectedPlayerClient.pushSongList();
     });
@@ -1125,7 +1226,7 @@
     /**
      * @event ytPlayerSkipSong
      */
-    $.bind('yTPlayerSkipSong', function (event) {
+    $.bind('yTPlayerSkipSong', function(event) {
         currentPlaylist.nextVideo();
         connectedPlayerClient.pushSongList();
     });
@@ -1133,7 +1234,7 @@
     /**
      * @event yTPlayerDeleteSR
      */
-    $.bind('yTPlayerDeleteSR', function (event) {
+    $.bind('yTPlayerDeleteSR', function(event) {
         currentPlaylist.removeSong(event.getId());
         connectedPlayerClient.pushSongList();
     });
@@ -1141,37 +1242,37 @@
     /**
      * @event yTPlayerVolume
      */
-    $.bind('yTPlayerVolume', function (event) {
+    $.bind('yTPlayerVolume', function(event) {
         $.inidb.set('ytSettings', 'volume', event.getVolume());
     });
 
     /**
      * @event yTPlayerRequestSonglist
      */
-    $.bind('yTPlayerRequestSonglist', function (event) {
+    $.bind('yTPlayerRequestSonglist', function(event) {
         connectedPlayerClient.pushSongList();
     });
 
     /**
      * @event yTPlayerRequestPlaylist
      */
-    $.bind('yTPlayerRequestPlaylist', function (event) {
+    $.bind('yTPlayerRequestPlaylist', function(event) {
         connectedPlayerClient.pushPlayList();
     });
 
     /**
      * @event yTPlayerRequestCurrentSong
      */
-    $.bind('yTPlayerRequestCurrentSong', function (event) {
+    $.bind('yTPlayerRequestCurrentSong', function(event) {
         connectedPlayerClient.pushCurrentSong();
     });
 
     /**
      * @event yTPlayerState
      */
-    $.bind('yTPlayerState', function (event) {
+    $.bind('yTPlayerState', function(event) {
         var state = event.getStateId(),
-                volume;
+            volume;
 
         if (state == playerStateEnum.NEW || state == playerStateEnum.NEWPAUSE) {
             volume = $.inidb.exists('ytSettings', 'volume') ? parseInt($.getIniDbString('ytSettings', 'volume')) : 5;
@@ -1203,7 +1304,7 @@
     /**
      * @event yTPlayerCurrentId
      */
-    $.bind('yTPlayerCurrentId', function (event) {
+    $.bind('yTPlayerCurrentId', function(event) {
         if (isNaN(event.getId())) {
             var video = new YoutubeVideo(event.getId(), $.ownerName);
 
@@ -1218,7 +1319,7 @@
     /**
      * @event yTPlayerConnect
      */
-    $.bind('yTPlayerConnect', function (event) {
+    $.bind('yTPlayerConnect', function(event) {
         connectedPlayerClient = new PlayerClientInterface();
 
         $.consoleLn($.lang.get('ytplayer.console.client.connected'));
@@ -1230,7 +1331,7 @@
     /**
      * @event yTPlayerDisconnect
      */
-    $.bind('yTPlayerDisconnect', function (event) {
+    $.bind('yTPlayerDisconnect', function(event) {
         connectedPlayerClient = null;
 
         $.consoleLn($.lang.get('ytplayer.console.client.disconnected'));
@@ -1243,13 +1344,13 @@
     /**
      * @event command
      */
-    $.bind('command', function (event) {
+    $.bind('command', function(event) {
         var command = event.getCommand(),
-                sender = event.getSender().toLowerCase(),
-                args = event.getArgs(),
-                pActions,
-                action,
-                actionArgs;
+            sender = event.getSender().toLowerCase(),
+            args = event.getArgs(),
+            pActions,
+            action,
+            actionArgs;
 
         /**
          * Used by the panel
@@ -1301,6 +1402,38 @@
                 $.inidb.RemoveFile('ytPlaylist_default');
                 createDefaultPl();
                 $.say($.whisperPrefix(sender) + $.lang.get('ytplayer.command.ytp.resetdefaultlist.success'));
+                return;
+            }
+
+            /**
+             * @commandpath ytp togglecconly - Toggle option to only use Creative Commons licensed songs.
+             */
+            if ($.equalsIgnoreCase(action, 'togglecconly')) {
+                if ($.getIniDbBoolean('ytSettings', 'playCCOnly')) {
+                    playCCOnly = false;
+                    $.setIniDbBoolean('ytSettings', 'playCCOnly', false);
+                    $.say($.whisperPrefix(sender) + $.lang.get('ytplayer.command.ytp.togglecconly.disable'));
+                } else {
+                    playCCOnly = true;
+                    $.setIniDbBoolean('ytSettings', 'playCCOnly', true);
+                    $.say($.whisperPrefix(sender) + $.lang.get('ytplayer.command.ytp.togglecconly.enable'));
+                }
+                return;
+            }
+
+            /**
+             * @commandpath ytp togglestealrefund - Toggle refunding users half their points if their song is stolen, use to reward users with songs that are liked
+             */
+            if ($.equalsIgnoreCase(action, 'togglestealrefund')) {
+                if ($.getIniDbBoolean('ytSettings', 'stealRefund')) {
+                    stealRefund = false;
+                    $.setIniDbBoolean('ytSettings', 'stealRefund', false);
+                    $.say($.whisperPrefix(sender) + $.lang.get('ytplayer.command.ytp.togglestealrefund.disable'));
+                } else {
+                    stealRefund = true;
+                    $.setIniDbBoolean('ytSettings', 'stealRefund', true);
+                    $.say($.whisperPrefix(sender) + $.lang.get('ytplayer.command.ytp.togglestealrefund.enable'));
+                }
                 return;
             }
 
@@ -1366,6 +1499,35 @@
                 return;
             }
 
+            /**
+             * @commandpath ytp votecount - Set the amount of votes needed for the !skip command to work
+             */
+            if ($.equalsIgnoreCase(action, 'votecount')) {
+                if (!connectedPlayerClient) {
+                    $.say($.whisperPrefix(sender) + $.lang.get('ytplayer.client.404'));
+                    return;
+                }
+
+                if (actionArgs[0] && !isNaN(parseInt(actionArgs[0]))) {
+                    if (actionArgs[0] < 0) {
+                        $.say($.whisperPrefix(sender) + $.lang.get('ytplayer.command.votecount.negative'));
+                        return;
+                    }
+                    $.inidb.set('ytSettings', 'voteCount', actionArgs[0]);
+                    voteCount = actionArgs[0];
+                    _voteLock.lock();
+                    try {
+                        voteArray = [];
+                    } finally {
+                        _voteLock.unlock();
+                    }
+                    skipCount = 0;
+                    $.say($.whisperPrefix(sender) + $.lang.get('ytplayer.command.votecount.set', actionArgs[0]));
+                } else {
+                    $.say($.whisperPrefix(sender) + $.lang.get('ytplayer.command.votecount.usage', voteCount));
+                }
+                return;
+            }
             /**
              * @commandpath ytp pause - Pause/unpause the player.
              */
@@ -1441,8 +1603,6 @@
                 return;
             }
 
-
-            // TODO Remove this, it is controlled by the API
             /**
              * @commandpath ytp setmaxvidlength [max video length in seconds] - Set the maximum length of a song that may be requested
              * @commandpath ytp maxvideolength [max video length in seconds] - Set the maximum length of a song that may be requested
@@ -1685,7 +1845,7 @@
          */
         if ($.equalsIgnoreCase(command, 'stealsong')) {
             var refundUser = '',
-                    responseString;
+                responseString;
 
             if (args.length == 0) {
                 if (currentPlaylist.addToPlaylist(currentPlaylist.getCurrentVideo()) == -2) {
@@ -1706,6 +1866,24 @@
                 return;
             }
 
+            if (stealRefund) {
+                if (!$.isBot(refundUser) && !$.equalsIgnoreCase(playlistDJname, refundUser)) {
+                    if ($.inidb.exists('pricecom', 'songrequest') || $.inidb.exists('pricecom', 'addsong')) {
+                        var isMod = $.checkUserPermission(refundUser, event.getTags(), $.PERMISSION.Mod);
+                        if ((((isMod && $.getIniDbBoolean('settings', 'pricecomMods', false) && !$.isBot(sender)) || !isMod))) {
+                            var refund = $.getIniDbString('pricecom', 'songrequest');
+                            if (refund == 0) {
+                                refund = $.getIniDbString('pricecom', 'addsong');
+                            }
+                            refund = parseInt(refund / 2);
+                            if (refund > 0) {
+                                $.inidb.incr('points', refundUser, parseInt(refund))
+                                responseString = responseString + ' ' + $.lang.get('ytplayer.command.stealsong.refund', $.viewer.getByLogin(refundUser).name(), refund, (refund == 1 ? $.pointNameSingle : $.pointNameMultiple));
+                            }
+                        }
+                    }
+                }
+            }
             $.say(responseString);
             return;
         }
@@ -1748,8 +1926,8 @@
             _voteLock.lock();
             try {
                 var username = $.username.resolve(sender, event.getTags()),
-                        check = voteArray.indexOf(username),
-                        action = args[0];
+                    check = voteArray.indexOf(username),
+                    action = args[0];
             } finally {
                 _voteLock.unlock();
             }
@@ -1765,15 +1943,42 @@
                     $.say($.whisperPrefix(sender) + $.lang.get('ytplayer.command.skip.delay'));
                     return;
                 }
-            }
+            } else {
 
+                /**
+                 * @commandpath skipsong vote - allow viewers to vote to skip a song
+                 */
+                if ($.equalsIgnoreCase(action, 'vote')) {
+                    if (voteCount == 0) {
+                        $.say($.whisperPrefix(sender) + $.lang.get('ytplayer.command.skip.disabled'));
+                        return;
+                    }
+
+                    if (check != -1) {
+                        $.say($.whisperPrefix(sender) + $.lang.get('ytplayer.command.skip.failure'));
+                        return;
+                    }
+
+                    skipCount = skipCount + 1;
+                    if (skipCount == voteCount) {
+                        $.say($.lang.get('ytplayer.command.skip.skipping'));
+                        currentPlaylist.nextVideo();
+                        connectedPlayerClient.pushSongList();
+                        return;
+                    }
+                    $.say($.whisperPrefix(sender) + $.lang.get('ytplayer.command.skip.success', voteCount - skipCount));
+                    _voteLock.lock();
+                    try {
+                        voteArray.push(username);
+                    } finally {
+                        _voteLock.unlock();
+                    }
+                    return;
+                }
+            }
             return;
         }
 
-
-        /************************************
-         * Songs are requested here
-         ***********************************/
 
         /**
          * @commandpath songrequest [YouTube ID | YouTube link | search string] - Request a song!
@@ -1859,8 +2064,8 @@
          */
         if ($.equalsIgnoreCase(command, 'nextsong')) {
             var minRange,
-                    maxRange,
-                    showRange;
+                maxRange,
+                showRange;
 
             if (!args[0]) {
                 if (currentPlaylist.getRequestAtIndex(0) == null) {
@@ -1930,7 +2135,7 @@
         }
     });
 
-    $.bind('initReady', function () {
+    $.bind('initReady', function() {
         $.registerChatCommand('./systems/youtubePlayer.js', 'ytp', $.PERMISSION.Admin);
         $.registerChatCommand('./systems/youtubePlayer.js', 'musicplayer', $.PERMISSION.Admin);
         $.registerChatCommand('./systems/youtubePlayer.js', 'playlist', $.PERMISSION.Admin);
