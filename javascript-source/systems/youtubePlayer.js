@@ -777,7 +777,6 @@
 
             try {
                 var youtubeVideo = new YoutubeVideo(searchQuery, requestOwner);
-                $.say('Got YT vid: ' + youtubeVideo)
             } catch (ex) {
                 requestFailReason = ex;
                 $.log.error("YoutubeVideo::exception: " + ex);
@@ -1792,7 +1791,6 @@
             }
 
             var request = currentPlaylist.requestSong(event.getArguments(), sender);
-            $.say('Song requested - ' + request)
             if (request != null) {
                 $.say($.whisperPrefix(sender) + $.lang.get('ytplayer.command.songrequest.success', request.getVideoTitle(), currentPlaylist.getRequestsCount(), request.getVideoId()));
                 connectedPlayerClient.pushSongList();
