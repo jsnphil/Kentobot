@@ -165,39 +165,7 @@
          * @returns {number}
          */
         this.getVideoLength = function () {
-            $.say("Getting length")
-            var attempts = 0;
-            if (videoLength != -1) {
-                return videoLength;
-            }
-
-            var lengthData = $.youtube.GetVideoLength(videoId);
-
-            if (lengthData[1] == 123 && lengthData[2] == 456 && lengthData[3] === 7899) {
-                throw 'Live Stream Detected';
-            }
-            // only try 2 times.
-            // No point in spamming the API, we'll hit the limit.
-            // If we try more than 2 times, that's 2 times on each song.
-            while (lengthData[0] == 0 && attempts <= 2) {
-                lengthData = $.youtube.GetVideoLength(videoId);
-                attempts++;
-            }
-            if (lengthData[0] == 0) {
-                return 0;
-            }
-            videoLength = lengthData[0];
-            return lengthData[0];
-        };
-
-        /**
-         * @function getVideoInfo
-         * Sets the member values for embeddable and license.
-         */
-        this.getVideoInfo = function () {
-            var videoInfo = $.youtube.GetVideoInfo(videoId);
-            license = videoInfo[0];
-            embeddable = videoInfo[1];
+            return videoLength;
         };
 
         /**
@@ -246,12 +214,6 @@
             owner = owner.toLowerCase();
         }
 
-        /* Redefine searchQuery to check the cache, if it doesn't exist in the cache,
-         * this is simply extracting the ID from the searchString which is one way
-         * of looking up videos via the YouTube API. Also, strip any query parameters
-         * from what should be URLs.  We do not wish to do this at the non-URL level
-         * as someone might be searching for a song using an ampersand.
-         */
         if (searchQuery.includes('/watch') && searchQuery.includes('v=')) {
             searchQuery = searchQuery.substring(searchQuery.indexOf('v=') + 2);
             if (searchQuery.includes('&')) {
@@ -264,50 +226,18 @@
             }
         }
 
-        var data = null;
-        var attempts = 0;
-        // We do not need an infinite loop here. 2 attempts is enough.
-        // If we loop more we might hit the limit.
-        // Since we need to look x times for each songs.
-        do {
-            // TODO Add call to Kentobot API here
-//            data = $.youtube.SearchForVideo(searchQuery);
-            data = $.kentobotApi.searchForSongRequest(searchQuery);
-            $.say('Back from API');
-            attempts++;
-        } while ($.strlen(data[0]) < 11 && data[1] != "No Search Results Found" && attempts <= 2);
+        var data = $.kentobotApi.searchForSongRequest(searchQuery);
+        var songResult = JSON.parse(data)
 
-        // Hit 5 trys and nothing was found
-        if ($.strlen(data[0]) < 11) {
-            throw 'No data returned.';
+        if (songResult.message != null && songResult.message == "Invalid input") {
+            throw songResult.errors[0];
         }
 
-        $.log.file('youtube-player', data[0] + ", " + data[1] + ", " + data[2]);
+        $.log.file('youtube-player', JSON.stringify(data));
 
-        videoId = data[0];
-        videoTitle = data[1];
-        videoLength = data[2];
-
-// TODO Replace with error handler from API 
-//        if ($.equalsIgnoreCase(videoTitle, 'video marked private') || $.equalsIgnoreCase(videoTitle, 'no search results found')) {
-//            throw videoTitle;
-//        }
-
-// TODO Remove, this is only used by the caching?
-//        this.getVideoLength();
-//        var jsonData = {};
-//        jsonData["youtubeId"] = videoId + '';
-//        jsonData["title"] = videoTitle + '';
-//        jsonData["length"] = videoLength;
-//        var jsonString = JSON.stringify(jsonData);
-//
-//
-//        this.getVideoInfo();
-//
-//        // TODO Confirm that this check is in the API
-//        if (embeddable == 0) {
-//            throw 'This video is not allowed to be embedded (ID: ' + videoId + ')';
-//        }
+        videoId = songResult["youtubeId"];
+        videoTitle = songResult["title"];
+        videoLength = songResult["length"];
 
         /** END CONTRUCTOR YoutubeVideo() */
     }
@@ -847,8 +777,9 @@
 
             try {
                 var youtubeVideo = new YoutubeVideo(searchQuery, requestOwner);
+                $.say('Got YT vid: ' + youtubeVideo)
             } catch (ex) {
-                requestFailReason = $.lang.get('ytplayer.requestsong.error.yterror', ex);
+                requestFailReason = ex;
                 $.log.error("YoutubeVideo::exception: " + ex);
                 return null;
             }
@@ -857,12 +788,6 @@
                 requestFailReason = $.lang.get('ytplayer.requestsong.error.exists');
                 return null;
             }
-
-            // TODO Remove - this is being done in the API
-//            if (this.videoLengthExceedsMax(youtubeVideo) && !$.checkUserPermission(requestOwner, undefined, $.PERMISSION.Admin)) {
-//                requestFailReason = $.lang.get('ytplayer.requestsong.error.maxlength', youtubeVideo.getVideoLengthMMSS());
-//                return null;
-//            }
 
             for (var i in keys) {
                 if (youtubeVideo.getVideoTitle().toLowerCase().includes(keys[i])) {
