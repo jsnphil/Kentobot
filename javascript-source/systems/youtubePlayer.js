@@ -256,7 +256,8 @@
                 playListDbId = playlistDbPrefix + playlistName,
                 defaultPlaylist = [], // @type { Integer[] }
                 defaultPlaylistReadOnly = [], // @type { Integer[] }
-                requests = new Packages.java.util.concurrent.ConcurrentLinkedQueue, // @type { YoutubeVideo[] } // TODO Replace with custom queue
+//                oldrequests = new Packages.java.util.concurrent.ConcurrentLinkedQueue, // @type { YoutubeVideo[] } // TODO Replace with custom queue
+                requests = new Packages.live.kentobeans.bot.SongQueue,
                 requestFailReason = '';
 
         this.playlistName = playlistName;
