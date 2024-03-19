@@ -95,5 +95,12 @@
     "ytplayer.command.skip.delay": "Skip is not allowed for a moment, please try again later.",
     "ytplayer.command.votecount.set": "Minimum votes now needed for viewers to skip songs: $1",
     "ytplayer.command.votecount.negative": "The number of votes needed must be positive!",
-    "ytplayer.command.votecount.usage": "!ytp votecount [amount]  ---  Current setting: $1"
+    "ytplayer.command.votecount.usage": "!ytp votecount [amount]  ---  Current setting: $1",
+    "ytplayer.queue.empty": "The queue is empty",
+    "ytplayer.command.edit.usage": "Usage: !edit [YouTube ID | YouTube link | search string]",
+    "ytplayer.command.edit.success": "Your request has been changed to \"$1\"",
+    "ytplayer.command.edit.error": "Your song could not be changed - $1",
+    "ytplayer.command.edit.404": "You do not have a song in the queue",
+    "ytplayer.command.edit.closed": "Requests are closed and your request could not be changed",
+    "ytplayer.command.edit.mod.usage": "Usage: !edit user [username] [YouTube ID | YouTube link | search string]"
 }

@@ -902,6 +902,12 @@
             this.loadPlaylistKeys();
         }
 
+        // Custom functions  
+        this.addToQueue = function (youtubeVideo, position) {
+
+            requests.addAtPosition(youtubeVideo, position);
+        };
+
         /** END CONTRUCTOR PlayList() */
     }
 
@@ -1929,7 +1935,136 @@
             }
             return;
         }
+
+        if ($.equalsIgnoreCase(command, 'edit')) {
+            if (!songRequestsEnabled) {
+                $.say(
+                        $.whisperPrefix(sender) + $.lang.get('ytplayer.command.edit.closed')
+                        );
+                return;
+            }
+
+            if (!args[0]) {
+                $.say(
+                        $.whisperPrefix(sender) + $.lang.get('ytplayer.command.edit.usage')
+                        );
+                return;
+            }
+
+            var newSong, user;
+            newSong = args[0];
+            user = sender;
+
+            // TODO If the sender is a mod and includues the 'user' argument, then use the user value and not the sender
+            if (args[0].equalsIgnoreCase('user')) {
+                if (!(args[1] && args[2])) {
+                    $.say(
+                            $.whisperPrefix(sender) +
+                            $.lang.get('ytplayer.command.edit.mod.usage')
+                            );
+                    return;
+                }
+
+                user = args[1].toLowerCase();
+                newSong = args[2];
+            } else {
+                newSong = args[0];
+                user = sender;
+            }
+
+            // Wrap this into it's own function?
+            var requestList = currentPlaylist.getRequestList();
+            if (requestList.length === 0) {
+                $.say($.whisperPrefix(sender) + $.lang.get('ytplayer.queue.empty'));
+                return;
+            }
+
+            var existingRequest = getUserRequest(user);
+            if (existingRequest === null) {
+                $.say(
+                        $.whisperPrefix(user) + $.lang.get('ytplayer.command.position.none')
+                        );
+                return;
+            }
+
+            // Find the new song
+            var newRequest;
+            try {
+                newRequest = new YoutubeVideo(newSong, user);
+
+                // Future addition - add bump and shuffle flags (create Github issue)
+
+                currentPlaylist.removeUserSong(user);
+                currentPlaylist.addToQueue(newRequest, existingRequest.position);
+                connectedPlayerClient.pushSongList();
+//            connectedPlayerClient.pushQueueInformation();
+                $.say(
+                        $.whisperPrefix(user) +
+                        $.lang.get(
+                                'ytplayer.command.edit.success',
+                                newRequest.getVideoTitle()
+                                )
+                        );
+            } catch (ex) {
+                requestFailReason = $.lang.get(
+                        'ytplayer.requestsong.error.yterror',
+                        ex
+                        );
+                $.say(
+                        $.whisperPrefix(user) + $.lang.get('ytplayer.command.edit.error', ex)
+                        );
+
+                $.log.error('YoutubeVideo::exception: ' + ex);
+
+            }
+
+            return;
+        }
     });
+
+    function getUserRequest(user) {
+        $.log.file(
+                'queue-management',
+                'Looking for request for user [' + user + ']'
+                );
+
+        user = $.user.sanitize(user);
+
+        var request;
+        var requests = currentPlaylist.getRequestList();
+
+        $.log.file('queue-management', 'Queue size [' + requests.length + ']');
+
+        for (var i = 0; i < requests.length; i++) {
+            request = requests[i];
+
+            $.say(JSON.stringify(request.getVideoId()));
+
+            $.log.file(
+                    'queue-management',
+                    'Request [' +
+                    i +
+                    '] owner [' +
+                    request.getOwner() +
+                    '], Given user [' +
+                    user +
+                    ']'
+                    );
+
+            if (request.getOwner().equalsIgnoreCase(user)) {
+                return {request: {
+                        owner: request.getOwner(),
+                        id: request.getVideoId(),
+                        length: parseInt(request.getVideoLength(), 10)
+                    }, "position": i};
+
+            }
+        }
+
+        $.log.file('queue-management', 'No request found for [' + user + ']');
+
+        return null;
+    }
 
     $.bind('initReady', function () {
         $.registerChatCommand('./systems/youtubePlayer.js', 'ytp', $.PERMISSION.Admin);
@@ -1950,6 +2085,10 @@
 
         $.registerChatSubcommand('skipsong', 'vote', $.PERMISSION.Viewer);
         $.registerChatSubcommand('wrongsong', 'user', $.PERMISSION.Mod);
+
+        // Custom Kentobot Commands
+        $.registerChatCommand('./systems/youtubePlayer.js', 'edit');
+        $.registerChatSubcommand('edit', 'user', $.PERMISSION.Mod);
 
         loadPanelPlaylist();
         loadDefaultPl();
