@@ -1956,6 +1956,21 @@
             user = sender;
 
             // TODO If the sender is a mod and includues the 'user' argument, then use the user value and not the sender
+            if (args[0].equalsIgnoreCase('user')) {
+                if (!(args[1] && args[2])) {
+                    $.say(
+                            $.whisperPrefix(sender) +
+                            $.lang.get('ytplayer.command.edit.mod.usage')
+                            );
+                    return;
+                }
+
+                user = args[1].toLowerCase();
+                newSong = args[2];
+            } else {
+                newSong = args[0];
+                user = sender;
+            }
 
             // Wrap this into it's own function?
             var requestList = currentPlaylist.getRequestList();
