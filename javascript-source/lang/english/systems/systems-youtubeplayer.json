@@ -102,5 +102,6 @@
     "ytplayer.command.edit.error": "Your song could not be changed - $1",
     "ytplayer.command.edit.404": "You do not have a song in the queue",
     "ytplayer.command.edit.closed": "Requests are closed and your request could not be changed",
-    "ytplayer.command.edit.mod.usage": "Usage: !edit user [username] [YouTube ID | YouTube link | search string]"
+    "ytplayer.command.edit.mod.usage": "Usage: !edit user [username] [YouTube ID | YouTube link | search string]",
+    "ytplayer.command.sr.mod.usage": "Usage: !sr user [username] [YouTube ID | YouTube link | search string]"
 }

@@ -1797,12 +1797,31 @@
                 return;
             }
 
-            var request = currentPlaylist.requestSong(event.getArguments(), sender);
+            var user;
+            if (args[0].equalsIgnoreCase('user')) {
+                if (!(args[1] && args[2])) {
+                    $.say(
+                            $.whisperPrefix(sender) +
+                            $.lang.get('ytplayer.command.sr.mod.usage')
+                            );
+                    return;
+                }
+
+                user = $.user.sanitize(args[1].toLowerCase());
+                song = args[2];
+            } else {
+                song = args[0];
+                user = sender;
+            }
+
+            var request = currentPlaylist.requestSong(event.getArguments(), user);
+            $.say('User: ' + user)
+            $.say('Request: ' + JSON.stringify(request.getVideoTitle()));
             if (request != null) {
-                $.say($.whisperPrefix(sender) + $.lang.get('ytplayer.command.songrequest.success', request.getVideoTitle(), currentPlaylist.getRequestsCount(), request.getVideoId()));
+                $.say($.whisperPrefix(user) + $.lang.get('ytplayer.command.songrequest.success', request.getVideoTitle(), currentPlaylist.getRequestsCount(), request.getVideoId()));
                 connectedPlayerClient.pushSongList();
             } else {
-                $.say($.whisperPrefix(sender) + $.lang.get('ytplayer.command.songrequest.failed', currentPlaylist.getRequestFailReason()));
+                $.say($.whisperPrefix(user) + $.lang.get('ytplayer.command.songrequest.failed', currentPlaylist.getRequestFailReason()));
             }
             return;
         }
