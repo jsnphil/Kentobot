@@ -796,11 +796,11 @@
                 }
             }
 
-            requests.add(youtubeVideo);
-            var playerState = connectedPlayerClient.checkState();
-            if (playerState == playerStateEnum.UNSTARTED || playerState == playerStateEnum.ENDED) {
-                this.nextVideo();
-            }
+//            requests.add(youtubeVideo);
+//            var playerState = connectedPlayerClient.checkState();
+//            if (playerState == playerStateEnum.UNSTARTED || playerState == playerStateEnum.ENDED) {
+//                this.nextVideo();
+//            }
             return youtubeVideo;
         };
 
@@ -887,6 +887,7 @@
          * @param {YoutubeVideo} youtubeVideo
          * @returns {boolean}
          */
+        // Remove, this is being done in the API
         this.videoLengthExceedsMax = function (youtubeVideo) {
             return (youtubeVideo.getVideoLength() > songRequestsMaxSecondsforVideo);
         };
@@ -904,8 +905,11 @@
 
         // Custom functions  
         this.addToQueue = function (youtubeVideo, position) {
-
-            requests.addAtPosition(youtubeVideo, position);
+            if (position) {
+                requests.addAtPosition(youtubeVideo, position);
+            } else {
+                requests.add(youtubeVideo);
+            }
         };
 
         /** END CONTRUCTOR PlayList() */
@@ -1815,10 +1819,16 @@
             }
 
             var request = currentPlaylist.requestSong(event.getArguments(), user);
-            $.say('User: ' + user)
-            $.say('Request: ' + JSON.stringify(request.getVideoTitle()));
             if (request != null) {
+                if (currentPlaylist.videoExistsInRequests(request)) {
+                    $.say(
+                            $.whisperPrefix(user) + $.lang.get('ytplayer.requestsong.error.exists')
+                            );
+                    return;
+                }
+
                 $.say($.whisperPrefix(user) + $.lang.get('ytplayer.command.songrequest.success', request.getVideoTitle(), currentPlaylist.getRequestsCount(), request.getVideoId()));
+                currentPlaylist.addToQueue(request);
                 connectedPlayerClient.pushSongList();
             } else {
                 $.say($.whisperPrefix(user) + $.lang.get('ytplayer.command.songrequest.failed', currentPlaylist.getRequestFailReason()));
@@ -2012,6 +2022,12 @@
                 newRequest = new YoutubeVideo(newSong, user);
 
                 // Future addition - add bump and shuffle flags (create Github issue)
+                if (currentPlaylist.videoExistsInRequests(request)) {
+                    $.say(
+                            $.whisperPrefix(user) + $.lang.get('ytplayer.requestsong.error.exists')
+                            );
+                    return;
+                }
 
                 currentPlaylist.removeUserSong(user);
                 currentPlaylist.addToQueue(newRequest, existingRequest.position);
