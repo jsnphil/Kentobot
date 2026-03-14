@@ -38,7 +38,7 @@ Network Trash Folder
 Temporary Items
 .apdisk
 bin/
-.vscode/
+
 
 # Files created by the bot inside resources folder
 resources/bannedUsers.bin
