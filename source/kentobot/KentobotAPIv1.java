@@ -21,7 +21,6 @@ import com.gmt2001.httpclient.HttpClientResponse;
 import com.gmt2001.httpclient.URIUtil;
 
 import io.netty.handler.codec.http.HttpHeaders;
-import io.netty.handler.codec.http.HttpMethod;
 import org.json.JSONException;
 import org.json.JSONObject;
 import tv.phantombot.CaselessProperties;
@@ -39,7 +38,7 @@ public final class KentobotAPIv1 {
      * @botproperty kentobotapi.baseurl - Base URL for the Kentobot API. Default: http://localhost:8080/api/v1
      * @botpropertycatsort kentobotapi.baseurl 10 900 Kentobot
      */
-    private static final String DEFAULT_BASE_URL = "http://localhost:8080/api/v1";
+    private static final String DEFAULT_BASE_URL = "https://h5pb2lum12.execute-api.us-east-1.amazonaws.com/dev/";
     
     /**
      * @botproperty kentobotapi.token - Authentication token for Kentobot API (if auth is required)
@@ -85,9 +84,14 @@ public final class KentobotAPIv1 {
         HttpHeaders headers = HttpClient.createHeaders(isPost, true); // JSON requests
         
         // Add authentication if token is configured
-        if (includeAuth && !getAuthToken().isEmpty()) {
-            headers.add("Authorization", "Bearer " + getAuthToken());
-        }
+        // if (includeAuth && !getAuthToken().isEmpty()) {
+        //     headers.add("Authorization", "Bearer " + getAuthToken());
+        // }
+
+        headers.add("Accept", "application/json");
+        headers.add("X-API-Key", "bwJZULr42U3kkFkP6YyNf2hllYtJdAyvayAqbu6P");   // TODO: Remove hardcoded API key and use configuration instead
+        
+
         
         // Add custom user agent
         headers.add("User-Agent", "PhantomBot-Kentobot-Client/1.0");
@@ -219,6 +223,7 @@ public final class KentobotAPIv1 {
      * @throws JSONException if there's an error creating the request payload
      */
     public static JSONObject requestSong(String songId, String username) throws JSONException {
+        com.gmt2001.Console.debug.println("Requesting song: " + songId + " for user: " + username);
         if (songId == null || songId.trim().isEmpty()) {
             throw new IllegalArgumentException("Song ID cannot be null or empty");
         }
@@ -227,11 +232,11 @@ public final class KentobotAPIv1 {
         }
         
         JSONObject payload = new JSONObject();
-        payload.put("songId", songId.trim());
-        payload.put("username", username.trim());
+        payload.put("youtubeId", songId.trim());
+        payload.put("requestedBy", username.trim());
         payload.put("timestamp", System.currentTimeMillis());
         
-        JSONObject result = makePostRequest("/songs/request", payload, true);
+        JSONObject result = makePostRequest("streams/current/queue/request-song", payload, true);
         
         // Log the request for debugging
         if (result.optBoolean("_success", false)) {
